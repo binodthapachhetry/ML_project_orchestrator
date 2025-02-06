@@ -8,7 +8,8 @@ const AudioInputSection = () => {
   const [transcription, setTranscription] = useState('');
   const [isAudioReady, setIsAudioReady] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [feedbackMessage, setFeedbackMessage] = useState(''); // New state for feedback
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [savedFiles, setSavedFiles] = useState([]); // State to store saved file keys
   const [encryptedData, setEncryptedData] = useState({
     ciphertext: null,
     iv: null,
@@ -297,10 +298,19 @@ useEffect(() => {
         </button>
 
         <button
-          onClick={loadEncryptedAudio}
+          onClick={loadSavedFiles}
         >
-          📂 Load Audio
+          📂 Load Saved Files
         </button>
+
+        <select onChange={(e) => loadEncryptedAudio(e.target.value)}>
+          <option value="">Select a file to load</option>
+          {savedFiles.map((fileKey) => (
+            <option key={fileKey} value={fileKey}>
+              {fileKey}
+            </option>
+          ))}
+        </select>
         
         <input
           type="file"
