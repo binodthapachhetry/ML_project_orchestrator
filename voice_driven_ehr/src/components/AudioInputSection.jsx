@@ -78,7 +78,8 @@ const AudioInputSection = () => {
         const tx = db.transaction("encryptedAudio", "readwrite");                                                                                                            
         const store = tx.objectStore("encryptedAudio");                                                                                                                      
                                                                                                                                                                              
-        const putRequest = store.put(encryptedData, "latest");                                                                                                               
+        const timestamp = new Date().toISOString(); // Use timestamp as key
+        const putRequest = store.put(encryptedData, timestamp);
                                                                                                                                                                              
         putRequest.onsuccess = () => {                                                                                                                                       
           console.log("Audio saved successfully!");                                                                                                                          
@@ -109,7 +110,38 @@ const AudioInputSection = () => {
     }                                                                                                                                                                        
   };       
 
-  const loadEncryptedAudio = async () => {                                                                                                                                   
+  const loadSavedFiles = async () => {
+    try {
+      const request = indexedDB.open("AudioStorage", 1);
+
+      request.onsuccess = (event) => {
+        const db = event.target.result;
+        const tx = db.transaction("encryptedAudio", "readonly");
+        const store = tx.objectStore("encryptedAudio");
+
+        const getAllKeysRequest = store.getAllKeys();
+
+        getAllKeysRequest.onsuccess = () => {
+          setSavedFiles(getAllKeysRequest.result);
+        };
+
+        getAllKeysRequest.onerror = (error) => {
+          console.error("Error retrieving keys:", error);
+          setFeedbackMessage("Failed to retrieve saved files.");
+        };
+      };
+
+      request.onerror = (error) => {
+        console.error("Error opening database:", error);
+        setFeedbackMessage("Failed to open database.");
+      };
+    } catch (error) {
+      console.error("Unexpected error:", error);
+      setFeedbackMessage("An unexpected error occurred.");
+    }
+  };
+
+  const loadEncryptedAudio = async (key) => {
     try {                                                                                                                                                                    
       const request = indexedDB.open("AudioStorage", 1);                                                                                                                     
                                                                                                                                                                              
