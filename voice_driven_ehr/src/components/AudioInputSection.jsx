@@ -55,71 +55,95 @@ const AudioInputSection = () => {
     }
   };
 
-  const saveEncryptedAudio = async () => {
-    if (!encryptedData.ciphertext) {
-      setFeedbackMessage("No encrypted audio to save.");
-      return;
-    }
+  const saveEncryptedAudio = async () => {                                                                                                                                   
+    if (!encryptedData.ciphertext) {                                                                                                                                         
+      setFeedbackMessage("No encrypted audio to save.");                                                                                                                     
+      return;                                                                                                                                                                
+    }                                                                                                                                                                        
+                                                                                                                                                                             
+    try {                                                                                                                                                                    
+      const request = indexedDB.open("AudioStorage", 1);                                                                                                                     
+                                                                                                                                                                             
+      request.onupgradeneeded = (event) => {                                                                                                                                 
+        const db = event.target.result;                                                                                                                                      
+        if (!db.objectStoreNames.contains("encryptedAudio")) {                                                                                                               
+          db.createObjectStore("encryptedAudio");                                                                                                                            
+          console.log("Object store 'encryptedAudio' created.");                                                                                                             
+        }                                                                                                                                                                    
+      };                                                                                                                                                                     
+                                                                                                                                                                             
+      request.onsuccess = (event) => {                                                                                                                                       
+        const db = event.target.result;                                                                                                                                      
+        const tx = db.transaction("encryptedAudio", "readwrite");                                                                                                            
+        const store = tx.objectStore("encryptedAudio");                                                                                                                      
+                                                                                                                                                                             
+        const putRequest = store.put(encryptedData, "latest");                                                                                                               
+                                                                                                                                                                             
+        putRequest.onsuccess = () => {                                                                                                                                       
+          console.log("Audio saved successfully!");                                                                                                                          
+          setFeedbackMessage("Audio saved securely!");                                                                                                                       
+        };                                                                                                                                                                   
+                                                                                                                                                                             
+        putRequest.onerror = (error) => {                                                                                                                                    
+          console.error("Error saving audio:", error);                                                                                                                       
+          setFeedbackMessage("Failed to save audio.");                                                                                                                       
+        };                                                                                                                                                                   
+                                                                                                                                                                             
+        tx.oncomplete = () => {                                                                                                                                              
+          console.log("Transaction completed successfully.");                                                                                                                
+        };                                                                                                                                                                   
+                                                                                                                                                                             
+        tx.onerror = (error) => {                                                                                                                                            
+          console.error("Transaction error:", error);                                                                                                                        
+        };                                                                                                                                                                   
+      };                                                                                                                                                                     
+                                                                                                                                                                             
+      request.onerror = (error) => {                                                                                                                                         
+        console.error("Error opening database:", error);                                                                                                                     
+        setFeedbackMessage("Failed to open database.");                                                                                                                      
+      };                                                                                                                                                                     
+    } catch (error) {                                                                                                                                                        
+      console.error("Unexpected error:", error);                                                                                                                             
+      setFeedbackMessage("An unexpected error occurred.");                                                                                                                   
+    }                                                                                                                                                                        
+  };       
 
-    try {
-      const request = indexedDB.open("AudioStorage", 1);
-
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains("encryptedAudio")) {
-          db.createObjectStore("encryptedAudio");
-        }
-      };
-
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        const tx = db.transaction("encryptedAudio", "readwrite");
-        const store = tx.objectStore("encryptedAudio");
-
-        const putRequest = store.put(encryptedData, "latest");
-
-        putRequest.onsuccess = () => {
-          console.log("Audio saved successfully!");
-          setFeedbackMessage("Audio saved securely!");
-        };
-
-        putRequest.onerror = (error) => {
-          console.error("Error saving audio:", error);
-          setFeedbackMessage("Failed to save audio.");
-        };
-
-        tx.oncomplete = () => {
-          console.log("Transaction completed successfully.");
-        };
-
-        tx.onerror = (error) => {
-          console.error("Transaction error:", error);
-        };
-      };
-
-      request.onerror = (error) => {
-        console.error("Error opening database:", error);
-        setFeedbackMessage("Failed to open database.");
-      };
-    } catch (error) {
-      console.error("Unexpected error:", error);
-      setFeedbackMessage("An unexpected error occurred.");
-    }
-  };
-
-  const loadEncryptedAudio = async () => {
-    const db = await indexedDB.open("AudioStorage", 1);
-    const tx = db.transaction("encryptedAudio", "readonly");
-    const store = tx.objectStore("encryptedAudio");
-  
-    const storedData = await store.get("latest");
-    if (storedData) {
-      setEncryptedData(storedData);
-      setFeedbackMessage("Encrypted audio loaded.");
-    } else {
-      setFeedbackMessage("No saved encrypted audio found.");
-    }
-  };
+  const loadEncryptedAudio = async () => {                                                                                                                                   
+    try {                                                                                                                                                                    
+      const request = indexedDB.open("AudioStorage", 1);                                                                                                                     
+                                                                                                                                                                             
+      request.onsuccess = (event) => {                                                                                                                                       
+        const db = event.target.result;                                                                                                                                      
+        const tx = db.transaction("encryptedAudio", "readonly");                                                                                                             
+        const store = tx.objectStore("encryptedAudio");                                                                                                                      
+                                                                                                                                                                             
+        const getRequest = store.get("latest");                                                                                                                              
+                                                                                                                                                                             
+        getRequest.onsuccess = () => {                                                                                                                                       
+          const storedData = getRequest.result;                                                                                                                              
+          if (storedData) {                                                                                                                                                  
+            setEncryptedData(storedData);                                                                                                                                    
+            setFeedbackMessage("Encrypted audio loaded.");                                                                                                                   
+          } else {                                                                                                                                                           
+            setFeedbackMessage("No saved encrypted audio found.");                                                                                                           
+          }                                                                                                                                                                  
+        };                                                                                                                                                                   
+                                                                                                                                                                             
+        getRequest.onerror = (error) => {                                                                                                                                    
+          console.error("Error loading audio:", error);                                                                                                                      
+          setFeedbackMessage("Failed to load audio.");                                                                                                                       
+        };                                                                                                                                                                   
+      };                                                                                                                                                                     
+                                                                                                                                                                             
+      request.onerror = (error) => {                                                                                                                                         
+        console.error("Error opening database:", error);                                                                                                                     
+        setFeedbackMessage("Failed to open database.");                                                                                                                      
+      };                                                                                                                                                                     
+    } catch (error) {                                                                                                                                                        
+      console.error("Unexpected error:", error);                                                                                                                             
+      setFeedbackMessage("An unexpected error occurred.");                                                                                                                   
+    }                                                                                                                                                                        
+  };        
 
   // Decrypt audio data
   const decryptAudio = async () => {
