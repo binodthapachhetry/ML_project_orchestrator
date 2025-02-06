@@ -60,18 +60,51 @@ const AudioInputSection = () => {
       setFeedbackMessage("No encrypted audio to save.");
       return;
     }
-  
-    const db = await indexedDB.open("AudioStorage", 1, (upgradeDB) => {
-      if (!upgradeDB.objectStoreNames.contains("encryptedAudio")) {
-        upgradeDB.createObjectStore("encryptedAudio");
-      }
-    });
-  
-    const tx = db.transaction("encryptedAudio", "readwrite");
-    const store = tx.objectStore("encryptedAudio");
-  
-    store.put(encryptedData, "latest");
-    setFeedbackMessage("Audio saved securely!");
+
+    try {
+      const request = indexedDB.open("AudioStorage", 1);
+
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains("encryptedAudio")) {
+          db.createObjectStore("encryptedAudio");
+        }
+      };
+
+      request.onsuccess = (event) => {
+        const db = event.target.result;
+        const tx = db.transaction("encryptedAudio", "readwrite");
+        const store = tx.objectStore("encryptedAudio");
+
+        const putRequest = store.put(encryptedData, "latest");
+
+        putRequest.onsuccess = () => {
+          console.log("Audio saved successfully!");
+          setFeedbackMessage("Audio saved securely!");
+        };
+
+        putRequest.onerror = (error) => {
+          console.error("Error saving audio:", error);
+          setFeedbackMessage("Failed to save audio.");
+        };
+
+        tx.oncomplete = () => {
+          console.log("Transaction completed successfully.");
+        };
+
+        tx.onerror = (error) => {
+          console.error("Transaction error:", error);
+        };
+      };
+
+      request.onerror = (error) => {
+        console.error("Error opening database:", error);
+        setFeedbackMessage("Failed to open database.");
+      };
+    } catch (error) {
+      console.error("Unexpected error:", error);
+      setFeedbackMessage("An unexpected error occurred.");
+    }
   };
 
   const loadEncryptedAudio = async () => {
