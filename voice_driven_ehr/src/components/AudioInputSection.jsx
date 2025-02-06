@@ -230,6 +230,19 @@ useEffect(() => {
         >
           {isPlaying ? '⏸ Pause' : '🔒 Play Secured Audio'}
         </button>
+
+        <button
+          onClick={saveEncryptedAudio}
+          disabled={!encryptedData.ciphertext}
+        >
+          💾 Save Audio
+        </button>
+
+        <button
+          onClick={loadEncryptedAudio}
+        >
+          📂 Load Audio
+        </button>
         
         <input
           type="file"
