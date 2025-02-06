@@ -8,6 +8,7 @@ const AudioInputSection = () => {
   const [transcription, setTranscription] = useState('');
   const [isAudioReady, setIsAudioReady] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [feedbackMessage, setFeedbackMessage] = useState(''); // New state for feedback
   const [encryptedData, setEncryptedData] = useState({
     ciphertext: null,
     iv: null,
@@ -56,7 +57,7 @@ const AudioInputSection = () => {
 
   const saveEncryptedAudio = async () => {
     if (!encryptedData.ciphertext) {
-      alert("No encrypted audio to save.");
+      setFeedbackMessage("No encrypted audio to save.");
       return;
     }
   
@@ -70,7 +71,7 @@ const AudioInputSection = () => {
     const store = tx.objectStore("encryptedAudio");
   
     store.put(encryptedData, "latest");
-    alert("Audio saved securely!");
+    setFeedbackMessage("Audio saved securely!");
   };
 
   const loadEncryptedAudio = async () => {
@@ -81,9 +82,9 @@ const AudioInputSection = () => {
     const storedData = await store.get("latest");
     if (storedData) {
       setEncryptedData(storedData);
-      alert("Encrypted audio loaded.");
+      setFeedbackMessage("Encrypted audio loaded.");
     } else {
-      alert("No saved encrypted audio found.");
+      setFeedbackMessage("No saved encrypted audio found.");
     }
   };
 
@@ -298,6 +299,12 @@ useEffect(() => {
         </button>
       </div>
 
+      {feedbackMessage && (
+        <div className="feedback-message">
+          {feedbackMessage}
+        </div>
+      )}
+
       <style jsx>{`
         .audio-section {
           padding: 2rem;
@@ -400,6 +407,16 @@ useEffect(() => {
           padding: 1.5rem;
           background: #f8f9fa;
           border-radius: 8px;
+        }
+
+        .feedback-message {
+          margin-top: 1rem;
+          padding: 1rem;
+          background: #e0f7fa;
+          border-radius: 8px;
+          color: #00796b;
+          font-weight: 500;
+          text-align: center;
         }
       `}</style>
     </div>
