@@ -1,14 +1,29 @@
 import { useState, useRef, useEffect } from 'react';
-import { initWhisper } from 'whisper.cpp/dist/whisper-react';                                                                                                              
-import { convertBlobToWav } from './audioUtils';                                                                                                                           
+import { pipeline} from '@xenova/transformers';                                                                                                             
+import { convertBlobToWav } from './audioUtils';
+import { env } from '@xenova/transformers';
+
+// Set the local model path                                                                                                                                                
+env.allowRemoteModels = true;
+env.verbose = true;
                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
 const AudioInputSection = () => {                                                                                                                                          
   // State management
+
+  // Add these constants at the top                                                                                                                                          
+  const MODEL_NAME = 'Xenova/whisper-tiny.en';                                                                                                                                 
+  const ASR_OPTIONS = {                                                                                                                                                      
+    chunk_length_s: 30,                                                                                                                                                      
+    stride_length_s: 5,                                                                                                                                                      
+    return_timestamps: true,                                                                                                                                                 
+  }; 
   
   const [isTranscribing, setIsTranscribing] = useState(false);                                                                                                               
   const [transcriptionError, setTranscriptionError] = useState('');
-  const [isSTTModelLoading, setIsSTTModelLoading] = useState(false);
-
+  const [modelLoadProgress, setModelLoadProgress] = useState(0);     
+  
+  const [asrPipeline, setAsrPipeline] = useState(null);                                                                                                                    
+  const [isSTTModelLoading, setIsSTTModelLoading] = useState(false); 
 
   const [isRecording, setIsRecording] = useState(false);                                                                                                                   
   const [audioUrl, setAudioUrl] = useState('');                                                                                                                            
@@ -31,14 +46,64 @@ const AudioInputSection = () => {
   const chunks = useRef([]);                                                                                                                                               
                                                                                                                                                                            
   // Generate encryption key                                                                                                                                               
-  const generateKey = async () => {                                                                                                                                        
+  const generateKey = async () => {                                                                                                                                       
     return crypto.subtle.generateKey(                                                                                                                                      
       { name: "AES-GCM", length: 256 },                                                                                                                                    
       true,                                                                                                                                                                
       ["encrypt", "decrypt"]                                                                                                                                               
     );                                                                                                                                                                     
-  };                                                                                                                                                                       
-                                                                                                                                                                           
+  };
+  
+                                                                                                                                      
+  // Initialize ASR pipeline once                                                                                                                                          
+  useEffect(() => {                                                                                                                                                        
+    const loadModel = async () => {                                                                                                                                        
+      setIsSTTModelLoading(true);                                                                                                                                          
+      try {                                                                                                                                                                
+        const pipelineInstance = await pipeline(                                                                                                                           
+          'automatic-speech-recognition',                                                                                                                                  
+          'Xenova/whisper-tiny.en',                                                                                                                                                       
+          {             
+            quantized: true,                                                                                                                                                   
+            progress_callback: (progress) => {  
+              setModelLoadProgress(progress * 100); // Update progress state                                                                                                                                                                                                                                        
+              console.log(`Loading model: ${(progress * 100).toFixed(1)}%`);                                                                                               
+            }, 
+            config: {                                                                                                                                                              
+              model: {                                                                                                                                                             
+                // Add explicit model configuration                                                                                                                                
+                _from_pretrained: "https://huggingface.co/Xenova/whisper-tiny.en",                                                                                                 
+                use_remote_files: true                                                                                                                                             
+              }                                                                                                                                                                    
+            },
+            // Add explicit processor configuration                                                                                                                                
+            processor: {                                                                                                                                                           
+              _class: 'WhisperProcessor',                                                                                                                                          
+              feature_extractor: {                                                                                                                                                 
+                _class: 'WhisperFeatureExtractor',                                                                                                                                 
+                feature_size: 80,                                                                                                                                                  
+                sampling_rate: 16000                                                                                                                                               
+              }                                                                                                                                                                    
+            }  
+            
+          }                                                                                                                                                                
+        );                                                                                                                                                                 
+        setAsrPipeline(pipelineInstance);                                                                                                                                  
+      } catch (error) {                                                                                                                                                          
+        console.error('Full model loading error:', error);                                                                                                                       
+        setTranscriptionError(`Model initialization failed: ${error.message}`);                                                                                                  
+        throw error;                                                                                                                                                             
+      } finally {                                                                                                                                                          
+        setIsSTTModelLoading(false);                                                                                                                                       
+      }                                                                                                                                                                    
+    }
+                                                                                                                                                                      
+    if (!asrPipeline) {                                                                                                                                                    
+      loadModel();                                                                                                                                                         
+    }                                                                                                                                                                      
+  }, []);
+
+                                                                                                                                                                         
   // Encrypt audio data                                                                                                                                                    
   const encryptAudio = async (rawBlob) => {                                                                                                                                
     try {                                                                                                                                                                  
@@ -186,56 +251,43 @@ const AudioInputSection = () => {
       setFeedbackMessage("An unexpected error occurred.");                                                                                                                 
     }                                                                                                                                                                      
   };
-
-  const loadWhisperModel = async () => {
-    setIsSTTModelLoading(true);
-    try {
-      return await initWhisper({
-        modelURL: '/models/ggml-large-v3-q5_0.bin',
-        wasmURL: '/wasm/whisper-react.wasm',
-        onProgress: (p) => console.log(`Model loading: ${p}%`)
-      });
-    } finally {
-      setIsSTTModelLoading(false);
-    }
-  };
   
-  // Replace simulateTranscription with:                                                                                                                                     
- const handleTranscription = async () => {                                                                                                                                  
-  if (!encryptedData.ciphertext) {                                                                                                                                         
-    setTranscriptionError('No audio to transcribe');                                                                                                                       
-    return;                                                                                                                                                                
-  }                                                                                                                                                                        
-                                                                                                                                                                           
-  setIsTranscribing(true);                                                                                                                                                 
-  setTranscriptionError('');                                                                                                                                               
-                                                                                                                                                                           
-  try {                                                                                                                                                                    
-    // 1. Decrypt the audio                                                                                                                                                
-    const decryptedUrl = await decryptAudio();                                                                                                                             
-    const response = await fetch(decryptedUrl);                                                                                                                            
-    const decryptedBlob = await response.blob();                                                                                                                           
-                                                                                                                                                                           
-    // 2. Convert to Whisper-compatible format                                                                                                                             
-    const wavBlob = await convertBlobToWav(decryptedBlob);                                                                                                                 
-                                                                                                                                                                           
-    // 3. Initialize Whisper                                                                                                                                               
-    const whisper = await loadWhisperModel();
-                                                                                                                                                                        
-    // 4. Perform transcription                                                                                                                                            
-    const result = await whisper.transcribe(wavBlob, {                                                                                                                     
-      language: 'en',                                                                                                                                                      
-      translate: false,                                                                                                                                                    
-    });                                                                                                                                                                    
-                                                                                                                                                                           
-    setTranscription(result.text);                                                                                                                                         
-  } catch (error) {                                                                                                                                                        
-    console.error('Transcription failed:', error);                                                                                                                         
-    setTranscriptionError('Transcription failed - ' + error.message);                                                                                                      
-  } finally {                                                                                                                                                              
-    setIsTranscribing(false);                                                                                                                                              
-  }                                                                                                                                                                        
-  };
+// Modified transcription handler                                                                                                                                        
+const handleTranscription = async () => {                                                                                                                                
+  if (!encryptedData.ciphertext) {                                                                                                                                       
+    setTranscriptionError('No audio to transcribe');                                                                                                                     
+    return;                                                                                                                                                              
+  }                                                                                                                                                                      
+                                                                                                                                                                         
+  setIsTranscribing(true);                                                                                                                                               
+  setTranscriptionError('');                                                                                                                                             
+                                                                                                                                                                         
+  try {                                                                                                                                                                  
+    // 1. Decrypt audio                                                                                                                                                  
+    const decryptedUrl = await decryptAudio();                                                                                                                           
+    const response = await fetch(decryptedUrl);                                                                                                                          
+    const decryptedBlob = await response.blob();                                                                                                                         
+                                                                                                                                                                         
+    // 2. Convert to WAV format                                                                                                                                          
+    const wavBlob = await convertBlobToWav(decryptedBlob);                                                                                                               
+    const arrayBuffer = await wavBlob.arrayBuffer();                                                                                                                     
+                                                                                                                                                                         
+    // 3. Convert to raw audio data                                                                                                                                      
+    const audioContext = new AudioContext();                                                                                                                             
+    const audioData = await audioContext.decodeAudioData(arrayBuffer);                                                                                                   
+    const rawAudio = audioData.getChannelData(0);                                                                                                                        
+                                                                                                                                                                         
+    // 4. Perform transcription                                                                                                                                          
+    const output = await asrPipeline(rawAudio, ASR_OPTIONS);                                                                                                             
+                                                                                                                                                                         
+    setTranscription(output.text);                                                                                                                                       
+  } catch (error) {                                                                                                                                                      
+    console.error('Transcription failed:', error);                                                                                                                       
+    setTranscriptionError(`Transcription failed: ${error.message}`);                                                                                                     
+  } finally {                                                                                                                                                            
+    setIsTranscribing(false);                                                                                                                                            
+  }                                                                                                                                                                      
+};        
                                                                                                                                                                            
   // Decrypt audio data                                                                                                                                                    
   const decryptAudio = async () => {                                                                                                                                       
@@ -333,11 +385,16 @@ const AudioInputSection = () => {
     }                                                                                                                                                                      
   }, [isAudioReady, audioUrl]); // Runs when audio is ready                                                                                                                
                                                                                                                                                                            
-  // Simulated transcription                                                                                                                                               
-  const simulateTranscription = () => {                                                                                                                                    
-    const fakeTranscript = "This is a simulated transcription. Replace with real speech-to-text results.";                                                                 
-    setTranscription(fakeTranscript);                                                                                                                                      
-  };                                                                                                                                                                       
+  useEffect(() => {                                                                                                                                                          
+    if (transcriptionError) {                                                                                                                                                
+      const errorMessage = `ASR Error: ${transcriptionError}\n\n` +                                                                                                          
+        'Please try:\n1. Checking microphone permissions\n' +                                                                                                                
+        '2. Using shorter audio clips\n3. Reloading the page';                                                                                                               
+                                                                                                                                                                            
+      alert(errorMessage);                                                                                                                                                   
+      console.error('ASR Failure:', transcriptionError);                                                                                                                     
+    }                                                                                                                                                                        
+  }, [transcriptionError]);                                                                                                                                                                       
                                                                                                                                                                            
   // Progress updater                                                                                                                                                      
   useEffect(() => {                                                                                                                                                        
@@ -426,7 +483,14 @@ const AudioInputSection = () => {
         ) : (                                                                                                                                                              
           <span className="unencrypted-warning">⚠️ No Secure Audio Loaded</span>                                                                                           
         )}                                                                                                                                                                 
-      </div>                                                                                                                                                               
+      </div>
+
+      {isSTTModelLoading && (                                                                                                                                                    
+        <div className="model-loading">                                                                                                                                          
+          <span>🔄 Loading Speech Recognition Model (first time only)...</span>                                                                                                  
+          <progress max="1" value={modelLoadProgress} />                                                                                                                         
+        </div>                                                                                                                                                                   
+      )}                                                                                                                                                            
                                                                                                                                                                            
       <div className="transcription-box">                                                                                                                                  
         <h3>Transcription:</h3>                                                                                                                                            
@@ -563,6 +627,31 @@ const AudioInputSection = () => {
           padding: 1.5rem;                                                                                                                                                 
           background: #f8f9fa;                                                                                                                                             
           border-radius: 8px;                                                                                                                                              
+        }
+        
+        .model-loading {                                                                                                                                                           
+          margin: 1.5rem 0;                                                                                                                                                        
+          padding: 1rem;                                                                                                                                                           
+          background: #e3f2fd;                                                                                                                                                     
+          border: 1px solid #90caf9;                                                                                                                                               
+          border-radius: 8px;                                                                                                                                                      
+          color: #0d47a1;                                                                                                                                                          
+        }                                                                                                                                                                          
+                                                                                                                                                                            
+        .model-loading progress {                                                                                                                                                  
+          width: 100%;                                                                                                                                                             
+          margin-top: 0.5rem;                                                                                                                                                      
+          height: 6px;                                                                                                                                                             
+          border-radius: 3px;                                                                                                                                                      
+        }                                                                                                                                                                          
+                                                                                                                                                                            
+        .model-loading progress::-webkit-progress-value {                                                                                                                          
+          background: #1976d2;                                                                                                                                                     
+          border-radius: 3px;                                                                                                                                                      
+        }                                                                                                                                                                          
+                                                                                                                                                                                    
+        .model-loading progress::-moz-progress-bar {                                                                                                                               
+          background: #1976d2;                                                                                                                                                     
         }                                                                                                                                                                  
                                                                                                                                                                            
         .feedback-message {                                                                                                                                                

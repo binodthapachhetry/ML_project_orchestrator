@@ -18,4 +18,10 @@ export const convertBlobToWav = async (blob, sampleRate = 16000) => {
                                                                                                                                                                              
     return new Blob([wavBuffer], { type: 'audio/wav' });                                                                                                                     
   };
+
+  export const validateAudioFormat = (blob) => {                                                                                                                             
+    return blob.type === 'audio/wav'                                                                                                                                         
+      && blob.size < 25 * 1024 * 1024 // 25MB limit                                                                                                                          
+      && blob.duration < 300; // 5 minute limit                                                                                                                              
+  }; 
   
