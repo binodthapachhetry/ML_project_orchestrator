@@ -18,6 +18,8 @@ const AudioInputSection = () => {
     stride_length_s: 0.5,                                                                                                                                                      
     return_timestamps: false,                                                                                                                                                 
   }; 
+
+  const [isPlaybackTriggered, setIsPlaybackTriggered] = useState(false);
   
   const [isTranscribing, setIsTranscribing] = useState(false);                                                                                                               
   const [transcriptionError, setTranscriptionError] = useState('');
@@ -271,7 +273,10 @@ const handleTranscription = async () => {
   if (!encryptedData.ciphertext) {                                                                                                                                       
     setTranscriptionError('No audio to transcribe');                                                                                                                     
     return;                                                                                                                                                              
-  }                                                                                                                                                                      
+  }
+  
+  // For transcription, ensure the playback flag is false
+  setIsPlaybackTriggered(false);
   
   setIsTranscribing(true);                                                                                                                                               
   setTranscriptionError('');                                                                                                                                             
@@ -289,17 +294,15 @@ const handleTranscription = async () => {
     // 3. Convert to raw audio data
     const audioContext = new AudioContext();
     const audioData = await audioContext.decodeAudioData(arrayBuffer);
-    console.log('Original audio sample rate:', audioData.sampleRate);
 
     // Resample to 16 kHz if necessary
     const targetSampleRate = 16000;
     let processedAudioData = audioData;
     if (audioData.sampleRate !== targetSampleRate) {
       processedAudioData = await resampleAudio(audioData, targetSampleRate);
-      console.log('Resampled audio sample rate:', processedAudioData.sampleRate);
     }
     const rawAudio = processedAudioData.getChannelData(0);
-    
+
     const output = await asrPipelineRef.current(rawAudio, ASR_OPTIONS);   
     console.log("STT result:", output.text);
     setTranscription(output.text);
@@ -384,9 +387,9 @@ const handleTranscription = async () => {
                                                                                                                                                                            
   // Handle playback                                                                                                                                                       
   const handlePlayback = async () => {                                                                                                                                     
-    try {                                                                                                                                                                  
+    try {    
+      setIsPlaybackTriggered(true); // indicate that this decryption is for playback                                                                                                                                                              
       const url = await decryptAudio();                                                                                                                                    
-      console.log('Decrypted URL:', url);                                                                                                                                  
                                                                                                                                                                            
       // Set state to indicate audio is ready                                                                                                                              
       setAudioUrl(url);                                                                                                                                                    
@@ -401,10 +404,14 @@ const handleTranscription = async () => {
   // Effect to play audio when it is ready                                                                                                                                 
   useEffect(() => {                                                                                                                                                        
     if (isAudioReady && audioRef.current && audioUrl) {                                                                                                                    
-      audioRef.current.src = audioUrl;                                                                                                                                     
-      audioRef.current.play()                                                                                                                                              
-        .then(() => setIsPlaying(true))                                                                                                                                    
-        .catch(e => console.error("Playback failed:", e));                                                                                                                 
+      audioRef.current.src = audioUrl;  
+
+      // Only auto-play if this decryption came from a playback request
+    if (isPlaybackTriggered) {
+      audioRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(e => console.error("Playback failed:", e));
+    }                                                                                                               
     }                                                                                                                                                                      
   }, [isAudioReady, audioUrl]); // Runs when audio is ready                                                                                                                
                                                                                                                                                                            
