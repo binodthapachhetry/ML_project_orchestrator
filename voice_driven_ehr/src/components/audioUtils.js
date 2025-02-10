@@ -1,3 +1,5 @@
+import wavEncoder from 'wav-encoder';
+
 export const convertBlobToWav = async (blob, sampleRate = 16000) => {                                                                                                      
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();                                                                                           
     const arrayBuffer = await blob.arrayBuffer();                                                                                                                            
@@ -10,11 +12,13 @@ export const convertBlobToWav = async (blob, sampleRate = 16000) => {
     source.connect(offlineContext.destination);                                                                                                                              
     source.start();                                                                                                                                                          
                                                                                                                                                                              
-    const resampled = await offlineContext.startRendering();                                                                                                                 
-    const wavBuffer = new WavFileEncoder({                                                                                                                                   
-      sampleRate: sampleRate,                                                                                                                                                
-      channelData: [resampled.getChannelData(0)]                                                                                                                             
-    }).encode();                                                                                                                                                             
+    const resampled = await offlineContext.startRendering();   
+
+    // Encode to WAV
+    const wavBuffer = await wavEncoder.encode({
+      sampleRate: sampleRate,
+      channelData: [resampled.getChannelData(0)],
+    });                                                                                                                                                            
                                                                                                                                                                              
     return new Blob([wavBuffer], { type: 'audio/wav' });                                                                                                                     
   };

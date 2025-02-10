@@ -1,6 +1,6 @@
-{                                                                                                                                                                          
-   "model_type": "whisper",                                                                                                                                                 
-   "use_remote_files": true,                                                                                                                                                
-   "quantized": true,                                                                                                                                                       
-   "_name_or_path": "Xenova/whisper-tiny.en"                                                                                                                                
- }
+// {                                                                                                                                                                          
+//    "model_type": "whisper",                                                                                                                                                 
+//    "use_remote_files": true,                                                                                                                                                
+//    "quantized": true,                                                                                                                                                       
+//    "_name_or_path": "onnx-community/whisper-large-v3-turbo_timestamped"                                                                                                                                
+//  }

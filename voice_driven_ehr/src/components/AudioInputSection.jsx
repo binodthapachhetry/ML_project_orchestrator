@@ -1,28 +1,29 @@
 import { useState, useRef, useEffect } from 'react';
-import { pipeline} from '@xenova/transformers';                                                                                                             
+import { pipeline, env} from '@huggingface/transformers';                                                                                                             
 import { convertBlobToWav } from './audioUtils';
-import { env } from '@xenova/transformers';
 
 // Set the local model path                                                                                                                                                
 env.allowRemoteModels = true;
 env.verbose = true;
+env.debug = true; 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
 const AudioInputSection = () => {                                                                                                                                          
-  // State management
+  
+  const loadedRef = useRef(false);
+  const asrPipelineRef = useRef(null);
 
   // Add these constants at the top                                                                                                                                          
-  const MODEL_NAME = 'Xenova/whisper-tiny.en';                                                                                                                                 
   const ASR_OPTIONS = {                                                                                                                                                      
-    chunk_length_s: 30,                                                                                                                                                      
-    stride_length_s: 5,                                                                                                                                                      
-    return_timestamps: true,                                                                                                                                                 
+    chunk_length_s: 5,                                                                                                                                                      
+    stride_length_s: 0.5,                                                                                                                                                      
+    return_timestamps: false,                                                                                                                                                 
   }; 
   
   const [isTranscribing, setIsTranscribing] = useState(false);                                                                                                               
   const [transcriptionError, setTranscriptionError] = useState('');
   const [modelLoadProgress, setModelLoadProgress] = useState(0);     
   
-  const [asrPipeline, setAsrPipeline] = useState(null);                                                                                                                    
+  // const [asrPipeline, setAsrPipeline] = useState(null);                                                                                                                    
   const [isSTTModelLoading, setIsSTTModelLoading] = useState(false); 
 
   const [isRecording, setIsRecording] = useState(false);                                                                                                                   
@@ -53,54 +54,44 @@ const AudioInputSection = () => {
       ["encrypt", "decrypt"]                                                                                                                                               
     );                                                                                                                                                                     
   };
-  
                                                                                                                                       
   // Initialize ASR pipeline once                                                                                                                                          
   useEffect(() => {                                                                                                                                                        
     const loadModel = async () => {                                                                                                                                        
-      setIsSTTModelLoading(true);                                                                                                                                          
+      setIsSTTModelLoading(true);                                                                                                                   
       try {                                                                                                                                                                
-        const pipelineInstance = await pipeline(                                                                                                                           
+        const pipelineInstance = await pipeline(  
+
           'automatic-speech-recognition',                                                                                                                                  
-          'Xenova/whisper-tiny.en',                                                                                                                                                       
-          {             
-            quantized: true,                                                                                                                                                   
-            progress_callback: (progress) => {  
-              setModelLoadProgress(progress * 100); // Update progress state                                                                                                                                                                                                                                        
-              console.log(`Loading model: ${(progress * 100).toFixed(1)}%`);                                                                                               
-            }, 
-            config: {                                                                                                                                                              
-              model: {                                                                                                                                                             
-                // Add explicit model configuration                                                                                                                                
-                _from_pretrained: "https://huggingface.co/Xenova/whisper-tiny.en",                                                                                                 
-                use_remote_files: true                                                                                                                                             
-              }                                                                                                                                                                    
-            },
-            // Add explicit processor configuration                                                                                                                                
-            processor: {                                                                                                                                                           
-              _class: 'WhisperProcessor',                                                                                                                                          
-              feature_extractor: {                                                                                                                                                 
-                _class: 'WhisperFeatureExtractor',                                                                                                                                 
-                feature_size: 80,                                                                                                                                                  
-                sampling_rate: 16000                                                                                                                                               
-              }                                                                                                                                                                    
-            }  
-            
-          }                                                                                                                                                                
-        );                                                                                                                                                                 
-        setAsrPipeline(pipelineInstance);                                                                                                                                  
+          'Xenova/whisper-tiny.en',                                                                                                                                                         
+        )
+
+        // Check if the pipeline has a callable function
+        if (typeof pipelineInstance.call === 'function' || typeof pipelineInstance === 'function') {
+          // setAsrPipeline(pipelineInstance);
+          asrPipelineRef.current = pipelineInstance;
+
+
+        } else {
+          console.error('Pipeline did not return a callable function:', pipelineInstance);
+        }
       } catch (error) {                                                                                                                                                          
-        console.error('Full model loading error:', error);                                                                                                                       
-        setTranscriptionError(`Model initialization failed: ${error.message}`);                                                                                                  
-        throw error;                                                                                                                                                             
+        console.error('Full model loading error:', error);
+        console.log('Model Config:', pipelineInstance ? await pipelineInstance.config : 'N/A');
+        setTranscriptionError(`Model initialization failed: ${error.message}`);
+        asrPipelineRef.current = null;
+                                                                                               
       } finally {                                                                                                                                                          
         setIsSTTModelLoading(false);                                                                                                                                       
       }                                                                                                                                                                    
-    }
-                                                                                                                                                                      
-    if (!asrPipeline) {                                                                                                                                                    
-      loadModel();                                                                                                                                                         
-    }                                                                                                                                                                      
+    };
+
+    if (!loadedRef.current) {
+      console.log('starting to load the model');
+      loadModel();
+      loadedRef.current = true;
+    }      
+
   }, []);
 
                                                                                                                                                                          
@@ -252,42 +243,74 @@ const AudioInputSection = () => {
     }                                                                                                                                                                      
   };
   
-// Modified transcription handler                                                                                                                                        
-const handleTranscription = async () => {                                                                                                                                
+// Helper function to resample audio to a target sample rate (e.g., 16000 Hz)
+const resampleAudio = async (audioBuffer, targetRate = 16000) => {
+  if (audioBuffer.sampleRate === targetRate) return audioBuffer;
+  
+  const numberOfChannels = audioBuffer.numberOfChannels;
+  const duration = audioBuffer.duration;
+  const offlineCtx = new OfflineAudioContext(
+    numberOfChannels,
+    Math.ceil(targetRate * duration),
+    targetRate
+  );
+  const source = offlineCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offlineCtx.destination);
+  source.start();
+  return await offlineCtx.startRendering();
+};
+
+// Modified transcription handler using the ref for inference
+const handleTranscription = async () => {    
+  if (!asrPipelineRef.current) { // Check if pipeline exists                                                                                                                          
+    setTranscriptionError('Model not loaded yet');                                                                                                                         
+    return;                                                                                                                                                                
+  }
+
   if (!encryptedData.ciphertext) {                                                                                                                                       
     setTranscriptionError('No audio to transcribe');                                                                                                                     
     return;                                                                                                                                                              
   }                                                                                                                                                                      
-                                                                                                                                                                         
+  
   setIsTranscribing(true);                                                                                                                                               
   setTranscriptionError('');                                                                                                                                             
-                                                                                                                                                                         
-  try {                                                                                                                                                                  
-    // 1. Decrypt audio                                                                                                                                                  
-    const decryptedUrl = await decryptAudio();                                                                                                                           
-    const response = await fetch(decryptedUrl);                                                                                                                          
-    const decryptedBlob = await response.blob();                                                                                                                         
-                                                                                                                                                                         
-    // 2. Convert to WAV format                                                                                                                                          
-    const wavBlob = await convertBlobToWav(decryptedBlob);                                                                                                               
-    const arrayBuffer = await wavBlob.arrayBuffer();                                                                                                                     
-                                                                                                                                                                         
-    // 3. Convert to raw audio data                                                                                                                                      
-    const audioContext = new AudioContext();                                                                                                                             
-    const audioData = await audioContext.decodeAudioData(arrayBuffer);                                                                                                   
-    const rawAudio = audioData.getChannelData(0);                                                                                                                        
-                                                                                                                                                                         
-    // 4. Perform transcription                                                                                                                                          
-    const output = await asrPipeline(rawAudio, ASR_OPTIONS);                                                                                                             
-                                                                                                                                                                         
-    setTranscription(output.text);                                                                                                                                       
+
+  try {
+    // 1. Decrypt audio
+    const decryptedUrl = await decryptAudio();
+    const response = await fetch(decryptedUrl);
+    const decryptedBlob = await response.blob();
+
+    // 2. Convert to WAV format
+    const wavBlob = await convertBlobToWav(decryptedBlob);
+    const arrayBuffer = await wavBlob.arrayBuffer();
+
+    // 3. Convert to raw audio data
+    const audioContext = new AudioContext();
+    const audioData = await audioContext.decodeAudioData(arrayBuffer);
+    console.log('Original audio sample rate:', audioData.sampleRate);
+
+    // Resample to 16 kHz if necessary
+    const targetSampleRate = 16000;
+    let processedAudioData = audioData;
+    if (audioData.sampleRate !== targetSampleRate) {
+      processedAudioData = await resampleAudio(audioData, targetSampleRate);
+      console.log('Resampled audio sample rate:', processedAudioData.sampleRate);
+    }
+    const rawAudio = processedAudioData.getChannelData(0);
+    
+    const output = await asrPipelineRef.current(rawAudio, ASR_OPTIONS);   
+    console.log("STT result:", output.text);
+    setTranscription(output.text);
+
   } catch (error) {                                                                                                                                                      
     console.error('Transcription failed:', error);                                                                                                                       
     setTranscriptionError(`Transcription failed: ${error.message}`);                                                                                                     
   } finally {                                                                                                                                                            
     setIsTranscribing(false);                                                                                                                                            
   }                                                                                                                                                                      
-};        
+}; 
                                                                                                                                                                            
   // Decrypt audio data                                                                                                                                                    
   const decryptAudio = async () => {                                                                                                                                       
@@ -515,7 +538,7 @@ const handleTranscription = async () => {
         </div>                                                                                                                                                             
       )}                                                                                                                                                                   
                                                                                                                                                                            
-      <style jsx>{`                                                                                                                                                        
+      <style jsx='true' >{`                                                                                                                                                        
         .audio-section {                                                                                                                                                   
           padding: 2rem;                                                                                                                                                   
           border: 1px solid #e0e0e0;                                                                                                                                       
