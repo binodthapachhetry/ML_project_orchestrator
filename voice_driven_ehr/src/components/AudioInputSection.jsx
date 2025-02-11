@@ -64,6 +64,8 @@ const AudioInputSection = () => {
     env.backends.onnx.wasm.wasmPaths = '/wasm/';
     env.backends.onnx.wasm.numThreads = navigator.hardwareConcurrency || 2;
     
+    let unloadFn = null;
+    
     // Initialize worker
     workerRef.current = new Worker(new URL('../../workers/asr.worker.js', import.meta.url));
     
@@ -79,6 +81,9 @@ const AudioInputSection = () => {
           setTranscription(e.data.transcription);
           setIsTranscribing(false);
           break;
+        case 'MODEL_LOADER':
+          unloadFn = e.data.unloadModel;
+          break;
         case 'ERROR':
           console.error('Worker error:', e.data.error);
           setTranscriptionError(e.data.error);
@@ -89,6 +94,7 @@ const AudioInputSection = () => {
     };
 
     return () => {
+      if (unloadFn) unloadFn();
       if (workerRef.current) {
         workerRef.current.terminate();
       }
