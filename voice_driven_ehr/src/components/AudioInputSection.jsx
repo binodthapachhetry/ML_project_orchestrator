@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { env } from '@xenova/transformers';
+import { env } from '@huggingface/transformers';
 import { convertBlobToWav } from './audioUtils';
 
 // Set the local model path                                                                                                                                                
@@ -67,7 +67,12 @@ const AudioInputSection = () => {
     let unloadFn = null;
     
     // Initialize worker
-    workerRef.current = new Worker(new URL('../../workers/asr.worker.js', import.meta.url));
+    // Use ?worker to tell Vite this is a web worker                                                                                                                           
+    workerRef.current = new Worker(                                                                                                                                            
+      new URL('../../workers/asr.worker.js', import.meta.url),                                                                                                                 
+      { type: 'module' }                                                                                                                                                       
+    );      
+
     
     const handleWorkerMessage = (e) => {
       switch (e.data.type) {
