@@ -69,7 +69,7 @@ const AudioInputSection = () => {
     // Initialize worker
     workerRef.current = new Worker(new URL('../../workers/asr.worker.js', import.meta.url));
     
-    workerRef.current.onmessage = (e) => {
+    const handleWorkerMessage = (e) => {
       switch (e.data.type) {
         case 'PROGRESS':
           setModelLoadProgress(e.data.progress);
@@ -93,11 +93,19 @@ const AudioInputSection = () => {
       }
     };
 
+    workerRef.current.onmessage = handleWorkerMessage;
+
     return () => {
-      if (unloadFn) unloadFn();
       if (workerRef.current) {
+        // Send unload message to worker before terminating
+        workerRef.current.postMessage({ type: 'UNLOAD' });
         workerRef.current.terminate();
+        workerRef.current = null;
       }
+      // Clear any model references
+      asrPipelineRef.current = null;
+      loadedRef.current = false;
+      setIsSTTModelLoading(false);
     };
   }, []);
 
