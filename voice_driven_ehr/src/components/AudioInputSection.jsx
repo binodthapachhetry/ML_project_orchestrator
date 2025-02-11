@@ -55,7 +55,7 @@ const AudioInputSection = () => {
       true,                                                                                                                                                                
       ["encrypt", "decrypt"]                                                                                                                                               
     );                                                                                                                                                                     
-  };
+  };        
                                                                                                                                       
   // Initialize ASR pipeline once                                                                                                                                          
   useEffect(() => {                                                                                                                                                        
@@ -63,16 +63,15 @@ const AudioInputSection = () => {
       setIsSTTModelLoading(true);                                                                                                                   
       try {                                                                                                                                                                
         const pipelineInstance = await pipeline(  
-
           'automatic-speech-recognition',                                                                                                                                  
-          'Xenova/whisper-tiny.en',                                                                                                                                                         
+          'Xenova/whisper-medium.en',
+          {quantized: true}                                                                                                                                                 
         )
 
         // Check if the pipeline has a callable function
         if (typeof pipelineInstance.call === 'function' || typeof pipelineInstance === 'function') {
           // setAsrPipeline(pipelineInstance);
           asrPipelineRef.current = pipelineInstance;
-
 
         } else {
           console.error('Pipeline did not return a callable function:', pipelineInstance);
@@ -84,7 +83,8 @@ const AudioInputSection = () => {
         asrPipelineRef.current = null;
                                                                                                
       } finally {                                                                                                                                                          
-        setIsSTTModelLoading(false);                                                                                                                                       
+        setIsSTTModelLoading(false);
+        console.log('Model configuration:', await asrPipelineRef.current);                                                                                                                                       
       }                                                                                                                                                                    
     };
 
@@ -303,12 +303,14 @@ const handleTranscription = async () => {
     }
     const rawAudio = processedAudioData.getChannelData(0);
 
-    const output = await asrPipelineRef.current(rawAudio, ASR_OPTIONS);   
+    const output = await asrPipelineRef.current(rawAudio, ASR_OPTIONS);
+
     console.log("STT result:", output.text);
     setTranscription(output.text);
 
   } catch (error) {                                                                                                                                                      
-    console.error('Transcription failed:', error);                                                                                                                       
+    console.error('Transcription failed:', error);
+    console.error('Stack trace:', error.stack);                                                                                                                      
     setTranscriptionError(`Transcription failed: ${error.message}`);                                                                                                     
   } finally {                                                                                                                                                            
     setIsTranscribing(false);                                                                                                                                            
