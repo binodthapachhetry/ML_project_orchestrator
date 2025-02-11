@@ -534,12 +534,13 @@ const handleTranscription = async () => {
         )}                                                                                                                                                                 
       </div>
 
-      {isSTTModelLoading && (                                                                                                                                                    
-        <div className="model-loading">                                                                                                                                          
-          <span>🔄 Loading Speech Recognition Model (first time only)...</span>                                                                                                  
-          <progress max="1" value={modelLoadProgress} />                                                                                                                         
-        </div>                                                                                                                                                                   
-      )}                                                                                                                                                            
+      {isSTTModelLoading && (
+        <div className="model-loading">
+          <span>🔄 Loading Speech Model ({Math.round(modelLoadProgress * 100)}%)...</span>
+          <progress max="1" value={modelLoadProgress} />
+          <p>This may take 2-3 minutes for first use - model is ~150MB</p>
+        </div>
+      )}
                                                                                                                                                                            
       <div className="transcription-box">                                                                                                                                  
         <h3>Transcription:</h3>                                                                                                                                            
