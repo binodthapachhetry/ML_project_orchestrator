@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { pipeline, env} from '@huggingface/transformers';                                                                                                             
+import { env } from '@xenova/transformers';
 import { convertBlobToWav } from './audioUtils';
 
 // Set the local model path                                                                                                                                                
@@ -9,6 +9,7 @@ env.debug = true;
                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
 const AudioInputSection = () => {                                                                                                                                          
   
+  const workerRef = useRef(null);
   const loadedRef = useRef(false);
   const asrPipelineRef = useRef(null);
 
@@ -58,43 +59,56 @@ const AudioInputSection = () => {
   };        
                                                                                                                                       
   // Initialize ASR pipeline once                                                                                                                                          
-  useEffect(() => {                                                                                                                                                        
-    const loadModel = async () => {                                                                                                                                        
-      setIsSTTModelLoading(true);                                                                                                                   
-      try {                                                                                                                                                                
-        const pipelineInstance = await pipeline(  
-          'automatic-speech-recognition',                                                                                                                                  
-          'Xenova/whisper-medium.en',
-          {quantized: true}                                                                                                                                                 
-        )
-
-        // Check if the pipeline has a callable function
-        if (typeof pipelineInstance.call === 'function' || typeof pipelineInstance === 'function') {
-          // setAsrPipeline(pipelineInstance);
-          asrPipelineRef.current = pipelineInstance;
-
-        } else {
-          console.error('Pipeline did not return a callable function:', pipelineInstance);
-        }
-      } catch (error) {                                                                                                                                                          
-        console.error('Full model loading error:', error);
-        console.log('Model Config:', pipelineInstance ? await pipelineInstance.config : 'N/A');
-        setTranscriptionError(`Model initialization failed: ${error.message}`);
-        asrPipelineRef.current = null;
-                                                                                               
-      } finally {                                                                                                                                                          
-        setIsSTTModelLoading(false);
-        console.log('Model configuration:', await asrPipelineRef.current);                                                                                                                                       
-      }                                                                                                                                                                    
+  useEffect(() => {
+    // Configure WASM settings
+    env.backends.onnx.wasm.wasmPaths = '/wasm/';
+    env.backends.onnx.wasm.numThreads = navigator.hardwareConcurrency || 2;
+    
+    // Initialize worker
+    workerRef.current = new Worker(new URL('../../workers/asr.worker.js', import.meta.url));
+    
+    workerRef.current.onmessage = (e) => {
+      switch (e.data.type) {
+        case 'PROGRESS':
+          setModelLoadProgress(e.data.progress);
+          break;
+        case 'READY':
+          setIsSTTModelLoading(false);
+          break;
+        case 'RESULT':
+          setTranscription(e.data.transcription);
+          setIsTranscribing(false);
+          break;
+        case 'ERROR':
+          console.error('Worker error:', e.data.error);
+          setTranscriptionError(e.data.error);
+          setIsTranscribing(false);
+          setIsSTTModelLoading(false);
+          break;
+      }
     };
 
-    if (!loadedRef.current) {
-      console.log('starting to load the model');
-      loadModel();
-      loadedRef.current = true;
-    }      
-
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+      }
+    };
   }, []);
+
+  const initializeModel = async () => {
+    if (!workerRef.current) return;
+    
+    setIsSTTModelLoading(true);
+    setTranscriptionError('');
+    
+    workerRef.current.postMessage({
+      type: 'INIT',
+      payload: {
+        model: 'Xenova/whisper-medium.en',
+        quantized: true
+      }
+    });
+  };
 
                                                                                                                                                                          
   // Encrypt audio data                                                                                                                                                    
@@ -265,21 +279,15 @@ const resampleAudio = async (audioBuffer, targetRate = 16000) => {
 
 // Modified transcription handler using the ref for inference
 const handleTranscription = async () => {    
-  if (!asrPipelineRef.current) { // Check if pipeline exists                                                                                                                          
-    setTranscriptionError('Model not loaded yet');                                                                                                                         
-    return;                                                                                                                                                                
+  if (!workerRef.current) {
+    setTranscriptionError('Worker not initialized');
+    return;
   }
 
   if (!encryptedData.ciphertext) {                                                                                                                                       
     setTranscriptionError('No audio to transcribe');                                                                                                                     
     return;                                                                                                                                                              
   }
-  
-  // For transcription, ensure the playback flag is false
-  setIsPlaybackTriggered(false);
-  
-  setIsTranscribing(true);                                                                                                                                               
-  setTranscriptionError('');                                                                                                                                             
 
   try {
     // 1. Decrypt audio
@@ -303,19 +311,28 @@ const handleTranscription = async () => {
     }
     const rawAudio = processedAudioData.getChannelData(0);
 
-    const output = await asrPipelineRef.current(rawAudio, ASR_OPTIONS);
+    setIsTranscribing(true);
+    setTranscriptionError('');
+    
+    if (!asrPipelineRef.current) {
+      // First run - initialize model on demand
+      await initializeModel();
+    }
 
-    console.log("STT result:", output.text);
-    setTranscription(output.text);
+    workerRef.current.postMessage({
+      type: 'TRANSCRIBE',
+      payload: {
+        audioData: rawAudio,
+        options: ASR_OPTIONS
+      }
+    });
 
   } catch (error) {                                                                                                                                                      
     console.error('Transcription failed:', error);
-    console.error('Stack trace:', error.stack);                                                                                                                      
     setTranscriptionError(`Transcription failed: ${error.message}`);                                                                                                     
-  } finally {                                                                                                                                                            
     setIsTranscribing(false);                                                                                                                                            
-  }                                                                                                                                                                      
-}; 
+  }
+};
                                                                                                                                                                            
   // Decrypt audio data                                                                                                                                                    
   const decryptAudio = async () => {                                                                                                                                       
