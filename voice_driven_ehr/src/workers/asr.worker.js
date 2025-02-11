@@ -27,5 +27,16 @@ self.addEventListener('message', async (e) => {
     } catch (error) {                                                                                                                                                      
       self.postMessage({ type: 'ERROR', error: error.message });                                                                                                           
     }                                                                                                                                                                      
-  }                                                                                                                                                                        
+  }
+
+  if (e.data.type === 'UNLOAD') {
+    // Clean up pipeline resources
+    if (pipeline) {
+      pipeline = null;
+    }
+    // Clear any cached data
+    self.caches?.delete('transformers-cache');
+    // Inform the main thread that cleanup is complete
+    self.postMessage({ type: 'UNLOADED' });
+  }                                                                                                                                                                      
 });  
