@@ -99,9 +99,15 @@ export function loadRemote(url, dst, size_mb, cbProgress, cbReady, cbCancel, cbP
     // Unloading mechanism
     function unloadModel() {
         cancelled = true;
-        modelBuffer = null;
-        Module.HEAPU8.fill(0, dst, dst + (size_mb * 1024 * 1024));
-        console.log(`Model at ${url} unloaded`);
+        
+        // modelBuffer = null;
+        // Module.HEAPU8.fill(0, dst, dst + (size_mb * 1024 * 1024));
+        // console.log(`Model at ${url} unloaded`);
+
+        if (modelBuffer) {                                                                                                                                                    
+            Module._free(dst); // Explicit WASM memory cleanup                                                                                                                  
+            modelBuffer = null;                                                                                                                                                 
+          }
     }
 
     // Start processing

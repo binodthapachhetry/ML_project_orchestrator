@@ -17,7 +17,7 @@ const AudioInputSection = () => {
   const ASR_OPTIONS = {                                                                                                                                                      
     chunk_length_s: 5,                                                                                                                                                      
     stride_length_s: 0.5,                                                                                                                                                      
-    return_timestamps: false,                                                                                                                                                 
+    return_timestamps: false,                                                                                                                                               
   }; 
 
   const [isPlaybackTriggered, setIsPlaybackTriggered] = useState(false);
@@ -60,16 +60,24 @@ const AudioInputSection = () => {
                                                                                                                                       
   // Initialize ASR pipeline once                                                                                                                                          
   useEffect(() => {
-    // Configure WASM settings
-    env.backends.onnx.wasm.wasmPaths = '/wasm/';
-    env.backends.onnx.wasm.numThreads = navigator.hardwareConcurrency || 2;
+    // // Configure WASM settings
+    // env.backends.onnx.wasm.wasmPaths = '/wasm/';
+
+    // env.backends.priority = ['wasm'];
+    
+    // env.backends.onnx.wasm.numThreads = navigator.hardwareConcurrency || 2;
+
+    //   // Additional WASM optimizations                                                                                                                                         
+    // env.backends.onnx.wasm.simd = true; // Enable SIMD if available                                                                                                          
+    // env.backends.onnx.wasm.proxy = false; // Disable proxy to reduce overhead                                                                                                
+    // env.backends.onnx.wasm.timeout = 60000; // Increase timeout for larger models
     
     let unloadFn = null;
     
     // Initialize worker
     // Use ?worker to tell Vite this is a web worker                                                                                                                           
     workerRef.current = new Worker(                                                                                                                                            
-      new URL('../../workers/asr.worker.js', import.meta.url),                                                                                                                 
+      new URL('../workers/asr.worker.js', import.meta.url),                                                                                                                 
       { type: 'module' }                                                                                                                                                       
     );      
 
@@ -114,20 +122,43 @@ const AudioInputSection = () => {
     };
   }, []);
 
-  const initializeModel = async () => {
-    if (!workerRef.current) return;
-    
-    setIsSTTModelLoading(true);
-    setTranscriptionError('');
-    
-    workerRef.current.postMessage({
-      type: 'INIT',
-      payload: {
-        model: 'Xenova/whisper-medium.en',
-        quantized: true
-      }
-    });
-  };
+  const initializeModel = async () => {                                                                                                                                      
+    if (!workerRef.current) return;                                                                                                                                          
+                                                                                                                                                                             
+    setIsSTTModelLoading(true);                                                                                                                                              
+    setTranscriptionError('');                                                                                                                                               
+                                                                                                                                                                             
+    return new Promise((resolve, reject) => {                                                                                                                                
+      const timeoutId = setTimeout(() => {                                                                                                                                   
+        reject(new Error('Model initialization timed out'));                                                                                                                 
+      }, 120000); // 30 second timeout                                                                                                                                        
+                                                                                                                                                                             
+      const handleInitMessage = (e) => {                                                                                                                                     
+        if (e.data.type === 'READY') {                                                                                                                                       
+          clearTimeout(timeoutId);                                                                                                                                           
+          workerRef.current.removeEventListener('message', handleInitMessage);                                                                                               
+          setIsSTTModelLoading(false);                                                                                                                                       
+          resolve();                                                                                                                                                         
+        } else if (e.data.type === 'ERROR') {                                                                                                                                
+          clearTimeout(timeoutId);                                                                                                                                           
+          workerRef.current.removeEventListener('message', handleInitMessage);                                                                                               
+          setIsSTTModelLoading(false);                                                                                                                                       
+          reject(new Error(e.data.error));                                                                                                                                   
+        }                                                                                                                                                                    
+      };                                                                                                                                                                     
+                                                                                                                                                                             
+      workerRef.current.addEventListener('message', handleInitMessage);                                                                                                      
+                                                                                                                                                                             
+      workerRef.current.postMessage({                                                                                                                                        
+        type: 'INIT',                                                                                                                                                        
+        payload: {                                                                                                                                                           
+          model: 'Xenova/whisper-small.en',                                                                                                                                 
+          quantized: true,
+          useSimd: false  // Add this line                                                                                                                                                    
+        }                                                                                                                                                                    
+      });                                                                                                                                                                    
+    });                                                                                                                                                                      
+  };    
 
                                                                                                                                                                          
   // Encrypt audio data                                                                                                                                                    
@@ -299,9 +330,23 @@ const resampleAudio = async (audioBuffer, targetRate = 16000) => {
 // Modified transcription handler using the ref for inference
 const handleTranscription = async () => {    
   if (!workerRef.current) {
+    console.error('Worker not initialized!'); 
     setTranscriptionError('Worker not initialized');
     return;
   }
+
+  // Add a check for worker readiness                                                                                                                                      
+  if (!loadedRef.current) {                                                                                                                                                
+    console.log('Model not loaded, initializing...');                                                                                                                      
+    try {                                                                                                                                                                  
+      await initializeModel();                                                                                                                                             
+      loadedRef.current = true;                                                                                                                                            
+    } catch (err) {                                                                                                                                                        
+      console.error('Failed to initialize model:', err);                                                                                                                   
+      setTranscriptionError('Failed to initialize model: ' + err.message);                                                                                                 
+      return;                                                                                                                                                              
+    }                                                                                                                                                                      
+  }  
 
   if (!encryptedData.ciphertext) {                                                                                                                                       
     setTranscriptionError('No audio to transcribe');                                                                                                                     
@@ -332,12 +377,12 @@ const handleTranscription = async () => {
 
     setIsTranscribing(true);
     setTranscriptionError('');
-    
-    if (!asrPipelineRef.current) {
-      // First run - initialize model on demand
-      await initializeModel();
-    }
 
+    console.log('Sending to worker:', {                                                                                                                                        
+      audioDataLength: rawAudio.length,                                                                                                                                        
+      options: ASR_OPTIONS                                                                                                                                                     
+    });
+    
     workerRef.current.postMessage({
       type: 'TRANSCRIBE',
       payload: {
@@ -352,6 +397,7 @@ const handleTranscription = async () => {
     setIsTranscribing(false);                                                                                                                                            
   }
 };
+
                                                                                                                                                                            
   // Decrypt audio data                                                                                                                                                    
   const decryptAudio = async () => {                                                                                                                                       
